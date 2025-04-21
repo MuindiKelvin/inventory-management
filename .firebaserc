@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "inventory-management-sys-b1752"
-  }
+    "default": "inventory-management-sys-96064"
+  },
+  "targets": {},
+  "etags": {}
 }
