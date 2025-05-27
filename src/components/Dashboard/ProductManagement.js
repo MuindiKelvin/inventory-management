@@ -29,7 +29,7 @@ const ProductManagement = () => {
   const [paginatedProducts, setPaginatedProducts] = useState([]);
   
   const receiptRef = useRef();
-  const tableRef = useRef();
+  const inventoryRef = useRef();
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -146,21 +146,99 @@ const ProductManagement = () => {
 
   const printReceipt = useReactToPrint({
     content: () => receiptRef.current,
+    documentTitle: `Receipt-${selectedProduct?.name || 'Product'}`,
     onAfterPrint: () => {
       setShowReceiptModal(false);
       toast.success(`Receipt for ${selectedProduct.name} printed successfully!`, {
         position: 'top-right',
         autoClose: 2000
       });
+    },
+    onPrintError: (error) => {
+      toast.error('Error printing receipt: ' + error.message, {
+        position: 'top-right',
+        autoClose: 3000
+      });
     }
   });
 
-  const printAllProducts = useReactToPrint({
-    content: () => tableRef.current,
+  const printInventory = useReactToPrint({
+    content: () => inventoryRef.current,
+    documentTitle: `Inventory-Report-${new Date().toLocaleDateString()}`,
+    pageStyle: `
+      @page {
+        size: A4;
+        margin: 1cm;
+      }
+      @media print {
+        body {
+          font-size: 12px;
+          -webkit-print-color-adjust: exact;
+          color-adjust: exact;
+        }
+        .no-print {
+          display: none !important;
+        }
+        table {
+          border-collapse: collapse;
+          width: 100% !important;
+          font-size: 11px;
+        }
+        th, td {
+          border: 1px solid #000 !important;
+          padding: 4px !important;
+          text-align: left;
+          page-break-inside: avoid;
+        }
+        th {
+          background-color: #f8f9fa !important;
+          font-weight: bold;
+        }
+        .print-header {
+          text-align: center;
+          margin-bottom: 20px;
+          border-bottom: 2px solid #000;
+          padding-bottom: 10px;
+        }
+        .print-header h1 {
+          margin: 0;
+          font-size: 24px;
+          color: #000;
+        }
+        .print-header p {
+          margin: 5px 0;
+          font-size: 12px;
+        }
+        .print-summary {
+          margin-top: 20px;
+          border-top: 2px solid #000;
+          padding-top: 10px;
+        }
+        .badge {
+          border: 1px solid #000 !important;
+          padding: 2px 6px !important;
+          border-radius: 3px !important;
+          font-size: 10px !important;
+        }
+        .low-stock-row {
+          background-color: #ffe6e6 !important;
+        }
+      }
+    `,
+    onBeforeGetContent: () => {
+      // You can add any pre-processing logic here
+      console.log('Preparing inventory report for printing...');
+    },
     onAfterPrint: () => {
       toast.success("Product inventory report printed successfully!", {
         position: 'top-right',
         autoClose: 2000
+      });
+    },
+    onPrintError: (error) => {
+      toast.error('Error printing inventory: ' + error.message, {
+        position: 'top-right',
+        autoClose: 3000
       });
     }
   });
@@ -241,6 +319,104 @@ const ProductManagement = () => {
     return items;
   };
 
+  // Component to render printable inventory
+  const PrintableInventory = React.forwardRef((props, ref) => {
+    const totalValue = filteredProducts.reduce((sum, product) => sum + (product.total || 0), 0);
+    const totalItems = filteredProducts.reduce((sum, product) => sum + (product.quantity || 0), 0);
+    const lowStockItems = filteredProducts.filter(p => p.balance < lowStockAlert);
+
+    return (
+      <div ref={ref} style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+        <div className="print-header">
+          <h1>SABREHAWK STORES</h1>
+          <p>123 Business Street, Nairobi, Kenya</p>
+          <p>Tel: +254 724 864 985 | Email: info@sabrehawkstores.com</p>
+          <h2>INVENTORY REPORT</h2>
+          <p>Generated on: {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}</p>
+          <p>Filter: {filterCategory !== 'All' ? `Category - ${filterCategory}` : 'All Categories'}</p>
+          {searchTerm && <p>Search: "{searchTerm}"</p>}
+        </div>
+
+        <Table striped bordered hover size="sm">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Barcode/QR</th>
+              <th>Price/Item (Ksh)</th>
+              <th>Qty</th>
+              <th>Total (Ksh)</th>
+              <th>Selling Price (Ksh)</th>
+              <th>Sold</th>
+              <th>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredProducts.map((product, index) => (
+              <tr
+                key={product.id}
+                className={product.balance < lowStockAlert ? 'low-stock-row' : ''}
+              >
+                <td>{index + 1}</td>
+                <td>{product.name}</td>
+                <td>
+                  <span className="badge">
+                    {product.category || 'Uncategorized'}
+                  </span>
+                </td>
+                <td>{product.barcode}</td>
+                <td>{product.price?.toLocaleString()}</td>
+                <td>{product.quantity}</td>
+                <td>{product.total?.toLocaleString()}</td>
+                <td>{product.sellingPrice?.toLocaleString()}</td>
+                <td>{product.sold}</td>
+                <td>
+                  <span className={`badge ${product.balance < lowStockAlert ? 'badge-danger' : 'badge-success'}`}>
+                    {product.balance}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+
+        <div className="print-summary">
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div>
+              <strong>Total Products:</strong> {filteredProducts.length}
+            </div>
+            <div>
+              <strong>Total Items:</strong> {totalItems.toLocaleString()}
+            </div>
+            <div>
+              <strong>Total Inventory Value:</strong> Ksh {totalValue.toLocaleString()}
+            </div>
+          </div>
+          
+          {lowStockItems.length > 0 && (
+            <div style={{ marginTop: '20px', padding: '10px', border: '1px solid #ff0000', backgroundColor: '#ffe6e6' }}>
+              <h4 style={{ color: '#ff0000', margin: '0 0 10px 0' }}>LOW STOCK ALERT</h4>
+              <p>The following {lowStockItems.length} item(s) are running low on stock (below {lowStockAlert} units):</p>
+              <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+                {lowStockItems.map(item => (
+                  <li key={item.id}>
+                    <strong>{item.name}</strong> - Balance: {item.balance} units
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          <div style={{ marginTop: '30px', textAlign: 'center', fontSize: '12px', color: '#666' }}>
+            <p>This report was generated automatically by the Sabrehawk Inventory Management System</p>
+            <p>Report ID: INV-{Date.now().toString().substring(5)}</p>
+          </div>
+        </div>
+      </div>
+    );
+  });
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
@@ -264,14 +440,15 @@ const ProductManagement = () => {
             <div className="d-flex gap-2">
               <Button 
                 variant="outline-secondary" 
-                onClick={printAllProducts}
+                onClick={printInventory}
+                disabled={loading || filteredProducts.length === 0}
               >
                 <BsPrinter className="me-2" /> Print Inventory
               </Button>
               
               <CSVLink 
                 data={csvData} 
-                filename="product-inventory.csv"
+                filename={`product-inventory-${new Date().toISOString().split('T')[0]}.csv`}
                 className="btn btn-outline-success"
               >
                 <FaFileExport className="me-2" /> Export CSV
@@ -360,7 +537,7 @@ const ProductManagement = () => {
           </Col>
         </Row>
 
-        <div ref={tableRef} className="table-responsive p-2">
+        <div className="table-responsive p-2">
           <Table striped bordered hover responsive>
             <thead style={{ background: 'linear-gradient(135deg, #f0f4f8, #d9e2ec)' }}>
               <tr>
@@ -477,6 +654,11 @@ const ProductManagement = () => {
           )}
         </div>
       </motion.div>
+
+      {/* Hidden printable inventory component */}
+      <div style={{ display: 'none' }}>
+        <PrintableInventory ref={inventoryRef} />
+      </div>
 
       {/* Receipt Modal */}
       <Modal

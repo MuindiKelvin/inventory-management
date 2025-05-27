@@ -7,6 +7,7 @@ import { db, storage } from '../../firebase/firebaseConfig';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { FaPlus, FaBarcode, FaBox, FaDollarSign, FaCalendar, FaSearch, FaTag, FaEdit, FaTimes, FaShoppingCart, FaImage, FaAlignLeft, FaLayerGroup, FaSave, FaExclamationTriangle, FaTrash, FaCheck } from 'react-icons/fa';
+import { v4 as uuidv4 } from 'uuid';
 
 // Debug mode flag
 const DEBUG = true;
@@ -58,6 +59,9 @@ const AddProduct = () => {
   const [categories, setCategories] = useState([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategory, setNewCategory] = useState('');
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
 
   // Firebase and auth states
   const [firebaseInitialized, setFirebaseInitialized] = useState(false);
@@ -82,7 +86,6 @@ const AddProduct = () => {
         return;
       }
 
-      // Check authentication status
       const auth = getAuth();
       onAuthStateChanged(auth, (currentUser) => {
         setUser(currentUser);
@@ -95,14 +98,12 @@ const AddProduct = () => {
     initFirebase();
   }, []);
 
-  // Calculate preview total
   useEffect(() => {
     const price = parseInt(product.price) || 0;
     const quantity = parseInt(product.quantity) || 0;
     setPreviewTotal(price * quantity);
   }, [product.price, product.quantity]);
 
-  // Clear success state after 3 seconds
   useEffect(() => {
     if (success) {
       const timer = setTimeout(() => {
@@ -116,7 +117,10 @@ const AddProduct = () => {
     try {
       if (DEBUG) console.log('Fetching categories...');
       const querySnapshot = await getDocs(collection(db, 'categories'));
-      const categoryList = querySnapshot.docs.map(doc => doc.data().name);
+      const categoryList = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }));
       setCategories(categoryList);
       if (DEBUG) console.log('Categories fetched:', categoryList);
     } catch (error) {
@@ -136,7 +140,7 @@ const AddProduct = () => {
         createdAt: new Date(),
         createdBy: user ? user.uid : 'anonymous'
       });
-      setCategories([...categories, newCategory.trim()]);
+      setCategories([...categories, { id: docRef.id, name: newCategory.trim() }]);
       setNewCategory('');
       setShowCategoryModal(false);
       toast.success(`Category "${newCategory.trim()}" added successfully!`);
@@ -146,6 +150,49 @@ const AddProduct = () => {
       setErrorMessage(`Failed to add category: ${error.code} - ${error.message}`);
       toast.error('Failed to add category');
     }
+  };
+
+  const handleEditCategory = async () => {
+    if (!editCategoryName.trim() || !editingCategory) return;
+
+    try {
+      if (DEBUG) console.log('Updating category:', editingCategory.id);
+      const categoryRef = doc(db, 'categories', editingCategory.id);
+      await updateDoc(categoryRef, {
+        name: editCategoryName.trim(),
+        updatedAt: new Date(),
+        updatedBy: user ? user.uid : 'anonymous'
+      });
+
+      // Update local state
+      setCategories(categories.map(cat => 
+        cat.id === editingCategory.id ? { ...cat, name: editCategoryName.trim() } : cat
+      ));
+      
+      // Update any products that use this category
+      const productsSnapshot = await getDocs(collection(db, 'products'));
+      const batch = productsSnapshot.docs
+        .filter(doc => doc.data().category === editingCategory.name)
+        .map(doc => updateDoc(doc.ref, { category: editCategoryName.trim() }));
+
+      await Promise.all(batch);
+
+      setEditCategoryName('');
+      setEditingCategory(null);
+      setShowEditCategoryModal(false);
+      toast.success(`Category "${editCategoryName.trim()}" updated successfully!`);
+      if (DEBUG) console.log('Category updated:', editingCategory.id);
+    } catch (error) {
+      console.error('Error updating category:', error);
+      setErrorMessage(`Failed to update category: ${error.code} - ${error.message}`);
+      toast.error('Failed to update category');
+    }
+  };
+
+  const startEditCategory = (category) => {
+    setEditingCategory(category);
+    setEditCategoryName(category.name);
+    setShowEditCategoryModal(true);
   };
 
   const fetchProductsFirstPage = async () => {
@@ -300,7 +347,6 @@ const AddProduct = () => {
         if (attempt === retries) {
           throw new Error(`Failed to upload product image after ${retries} attempts: ${error.message}`);
         }
-        // Wait before retry
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
@@ -387,7 +433,6 @@ const AddProduct = () => {
       const sold = parseInt(product.sold) || 0;
       const balance = quantity - sold;
       
-      // Prepare product data
       const productData = {
         name: product.name.trim(),
         barcode: product.barcode.trim(),
@@ -405,7 +450,6 @@ const AddProduct = () => {
         updatedBy: user.uid
       };
 
-      // Attempt image upload, but don't fail the entire submission if it fails
       if (imageFile) {
         try {
           const tempId = editMode ? editProductId : Date.now().toString();
@@ -414,7 +458,7 @@ const AddProduct = () => {
           console.error('Image upload failed, proceeding without image:', imageError);
           setErrorMessage(imageError.message);
           toast.error('Image upload failed, but product will be saved without an image.');
-          productData.imageUrl = ''; // Proceed without an image
+          productData.imageUrl = '';
         }
       }
       
@@ -669,16 +713,23 @@ const AddProduct = () => {
                             required
                           >
                             <option value="">Select category</option>
-                            {categories.map((cat, idx) => (
-                              <option key={idx} value={cat}>{cat}</option>
+                            {categories.map((cat) => (
+                              <option key={cat.id} value={cat.name}>{cat.name}</option>
                             ))}
                             <option value="Uncategorized">Uncategorized</option>
                           </Form.Select>
                           <Button 
                             variant="outline-secondary"
                             onClick={() => setShowCategoryModal(true)}
+                            className="me-1"
                           >
                             <FaPlus /> New
+                          </Button>
+                          <Button 
+                            variant="outline-secondary"
+                            onClick={() => setShowEditCategoryModal(true)}
+                          >
+                            <FaEdit /> Edit
                           </Button>
                         </InputGroup>
                       </Form.Group>
@@ -994,7 +1045,7 @@ const AddProduct = () => {
                         </AnimatePresence>
                       </tbody>
                     </Table>
-                  ): (
+                  ) : (
                     <div className="text-center p-5">
                       <FaBox size={40} className="text-muted mb-3" />
                       <p className="text-muted">
@@ -1096,6 +1147,68 @@ const AddProduct = () => {
             disabled={!newCategory.trim() || !user}
           >
             <FaPlus className="me-1" /> Add Category
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal 
+        show={showEditCategoryModal} 
+        onHide={() => {
+          setShowEditCategoryModal(false);
+          setEditingCategory(null);
+          setEditCategoryName('');
+        }}
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Edit Category</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>Select Category to Edit</Form.Label>
+            <Form.Select
+              value={editingCategory?.id || ''}
+              onChange={(e) => {
+                const selectedCategory = categories.find(cat => cat.id === e.target.value);
+                setEditingCategory(selectedCategory);
+                setEditCategoryName(selectedCategory?.name || '');
+              }}
+            >
+              <option value="">Select a category</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </Form.Select>
+          </Form.Group>
+          <Form.Group>
+            <Form.Label>New Category Name</Form.Label>
+            <Form.Control
+              type="text"
+              placeholder="Enter new category name"
+              value={editCategoryName}
+              onChange={(e) => setEditCategoryName(e.target.value)}
+              disabled={!editingCategory}
+              autoFocus
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button 
+            variant="secondary" 
+            onClick={() => {
+              setShowEditCategoryModal(false);
+              setEditingCategory(null);
+              setEditCategoryName('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleEditCategory}
+            disabled={!editCategoryName.trim() || !editingCategory || !user}
+          >
+            <FaSave className="me-1" /> Update Category
           </Button>
         </Modal.Footer>
       </Modal>

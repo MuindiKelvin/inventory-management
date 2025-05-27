@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '../../firebase/firebaseConfig';
 import { Container, Form, Button, Card, Row, Col, Modal, Alert } from 'react-bootstrap';
-import { BsLockFill, BsEnvelopeFill, BsShieldLockFill, BsArrowRepeat, BsBoxArrowInRight } from 'react-icons/bs';
+import { BsLockFill, BsEnvelopeFill, BsShieldLockFill, BsArrowRepeat, BsBoxArrowInRight, BsGoogle } from 'react-icons/bs';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 
@@ -14,7 +14,14 @@ const Login = ({ theme }) => {
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Initialize Google Auth Provider
+  const googleProvider = new GoogleAuthProvider();
+  googleProvider.setCustomParameters({
+    prompt: 'select_account'
+  });
 
   // Animation variants
   const containerVariants = {
@@ -60,6 +67,41 @@ const Login = ({ theme }) => {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsGoogleLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      toast.success(`Welcome ${user.displayName || user.email}!`, {
+        position: 'top-right',
+        autoClose: 3000,
+      });
+      navigate('/dashboard');
+    } catch (error) {
+      let errorMessage = 'Google sign-in failed';
+      
+      if (error.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Sign-in cancelled. Please try again.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errorMessage = 'Popup blocked. Please allow popups and try again.';
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        errorMessage = 'An account already exists with this email using a different sign-in method.';
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Please check your connection and try again.';
+      } else {
+        errorMessage += ': ' + error.message;
+      }
+      
+      toast.error(errorMessage, {
+        position: 'top-right',
+        autoClose: 4000,
+      });
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -124,6 +166,43 @@ const Login = ({ theme }) => {
                 </motion.div>
 
                 <motion.div variants={containerVariants} initial="hidden" animate="visible">
+                  {/* Google Sign-in Button */}
+                  <motion.div variants={itemVariants} className="mb-4">
+                    <motion.div
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <Button
+                        variant="outline-dark"
+                        className="w-100 py-2 d-flex align-items-center justify-content-center google-btn"
+                        onClick={handleGoogleLogin}
+                        disabled={isGoogleLoading || isLoading}
+                      >
+                        {isGoogleLoading ? (
+                          <>
+                            <BsArrowRepeat className="spin-animation me-2" />
+                            Signing in with Google...
+                          </>
+                        ) : (
+                          <>
+                            <BsGoogle className="me-2 text-danger" size={18} />
+                            Continue with Google
+                          </>
+                        )}
+                      </Button>
+                    </motion.div>
+                  </motion.div>
+
+                  {/* Divider */}
+                  <motion.div 
+                    variants={itemVariants}
+                    className="d-flex justify-content-center align-items-center mb-4"
+                  >
+                    <div className="border-top w-100"></div>
+                    <p className="mx-3 text-muted mb-0 small">or</p>
+                    <div className="border-top w-100"></div>
+                  </motion.div>
+
                   <Form onSubmit={handleLogin}>
                     <motion.div variants={itemVariants}>
                       <Form.Group className="mb-3 position-relative">
@@ -175,7 +254,7 @@ const Login = ({ theme }) => {
                         variant="primary" 
                         type="submit" 
                         className="w-100 btn-gradient rounded-pill py-2 d-flex align-items-center justify-content-center"
-                        disabled={isLoading}
+                        disabled={isLoading || isGoogleLoading}
                       >
                         {isLoading ? (
                           <>
@@ -185,7 +264,7 @@ const Login = ({ theme }) => {
                         ) : (
                           <>
                             <BsBoxArrowInRight className="me-2" />
-                            Login
+                            Login with Email
                           </>
                         )}
                       </Button>
@@ -196,32 +275,6 @@ const Login = ({ theme }) => {
                     <p className="mb-0">
                       Don't have an account? <a href="/signup" className="text-primary fw-bold">Sign Up</a>
                     </p>
-                  </motion.div>
-
-                  <motion.div 
-                    variants={itemVariants}
-                    className="d-flex justify-content-center align-items-center mt-4"
-                  >
-                    <div className="border-top w-25"></div>
-                    <p className="mx-2 text-muted mb-0">or continue with</p>
-                    <div className="border-top w-25"></div>
-                  </motion.div>
-
-                  <motion.div 
-                    variants={itemVariants}
-                    className="d-flex justify-content-center gap-3 mt-3"
-                  >
-                    {['google', 'facebook', 'apple'].map((provider) => (
-                      <motion.button
-                        key={provider}
-                        className="btn btn-outline-secondary rounded-circle"
-                        style={{ width: '45px', height: '45px' }}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                      >
-                        <i className={`bi bi-${provider}`}></i>
-                      </motion.button>
-                    ))}
                   </motion.div>
                 </motion.div>
               </Card>
@@ -299,6 +352,24 @@ const Login = ({ theme }) => {
         .btn-gradient:hover {
           background: linear-gradient(45deg, #0069d9, #563d7c);
           box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .google-btn {
+          border: 2px solid #e0e0e0;
+          transition: all 0.3s ease;
+          background: white;
+          font-weight: 500;
+        }
+        
+        .google-btn:hover {
+          border-color: #d0d0d0;
+          background: #f8f9fa;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .google-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
         
         .glass-card {
